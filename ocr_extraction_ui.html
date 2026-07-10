@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<title>Govt Letter OCR Extraction</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Noto Sans Devanagari', 'Segoe UI', sans-serif;
+    background: #f4f6f8;
+    margin: 0;
+    padding: 24px;
+    color: #1a1a1a;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  p.subtitle { color: #666; margin-top: 0; margin-bottom: 20px; }
+
+  .card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    margin-bottom: 20px;
+  }
+
+  label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 14px; }
+  input[type="text"], textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #d7dbe0;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  textarea { min-height: 160px; resize: vertical; margin-top: 12px; }
+
+  button {
+    margin-top: 14px;
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    padding: 10px 22px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: #1d4ed8; }
+  button:disabled { background: #9ca3af; cursor: not-allowed; }
+
+  #status { margin-top: 10px; font-size: 14px; }
+  .status-loading { color: #b45309; }
+  .status-error { color: #b91c1c; }
+  .status-success { color: #15803d; }
+
+  .result-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .field {
+    border-bottom: 1px solid #eef0f2;
+    padding-bottom: 12px;
+  }
+  .field:last-child { border-bottom: none; padding-bottom: 0; }
+  .field-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+  .field-value {
+    font-size: 15px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .badge {
+    display: inline-block;
+    background: #eef2ff;
+    color: #3730a3;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    margin-right: 6px;
+    margin-top: 4px;
+  }
+  .verification-note {
+    font-size: 13px;
+    color: #92400e;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>📄 Govt Letter OCR Extraction</h1>
+  <p class="subtitle">Kaggle पर चल रहे FastAPI server को call करके OCR text से जानकारी निकालो</p>
+
+  <div class="card">
+    <label for="apiUrl">API URL (ngrok से मिला हुआ, आख़िर में /extract जोड़ें)</label>
+    <input type="text" id="apiUrl" placeholder="https://xxxx-xx-xx-xxx-xx.ngrok-free.app/extract">
+
+    <label for="ocrText" style="margin-top:16px;">OCR Text</label>
+    <textarea id="ocrText" placeholder="यहाँ अपना OCR text paste करें..."></textarea>
+
+    <button id="submitBtn" onclick="callApi()">Extract करें</button>
+    <div id="status"></div>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none;">
+    <div class="result-grid" id="resultGrid"></div>
+  </div>
+</div>
+
+<script>
+async function callApi() {
+  const apiUrl = document.getElementById('apiUrl').value.trim();
+  const ocrText = document.getElementById('ocrText').value.trim();
+  const statusEl = document.getElementById('status');
+  const btn = document.getElementById('submitBtn');
+  const resultCard = document.getElementById('resultCard');
+  const resultGrid = document.getElementById('resultGrid');
+
+  if (!apiUrl) {
+    statusEl.className = 'status-error';
+    statusEl.textContent = '⚠️ पहले API URL डालें (ngrok वाला, /extract के साथ)';
+    return;
+  }
+  if (!ocrText) {
+    statusEl.className = 'status-error';
+    statusEl.textContent = '⚠️ OCR text खाली नहीं हो सकता';
+    return;
+  }
+
+  btn.disabled = true;
+  statusEl.className = 'status-loading';
+  statusEl.textContent = '⏳ Processing हो रहा है, थोड़ा समय लगेगा...';
+  resultCard.style.display = 'none';
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ocr_text: ocrText })
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.detail || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    renderResult(data);
+
+    statusEl.className = 'status-success';
+    statusEl.textContent = '✅ Extraction सफल रहा';
+  } catch (err) {
+    statusEl.className = 'status-error';
+    statusEl.textContent = '❌ Error: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderResult(data) {
+  const resultCard = document.getElementById('resultCard');
+  const resultGrid = document.getElementById('resultGrid');
+  resultGrid.innerHTML = '';
+
+  const fieldLabels = {
+    Subject: 'विषय (Subject)',
+    Main_Content: 'मुख्य विवरण (Main Content)',
+    Name: 'नाम (Name)',
+    Barcode: 'बारकोड (Barcode)',
+    Mobile_No: 'मोबाइल नंबर',
+    Email_ID: 'ईमेल',
+    Department_Name: 'विभाग (Department)',
+    Department_Verification: null, // अलग से handle होगा
+    Category_Name: 'श्रेणी (Category)',
+    Adesh_Adhikari: 'आदेश अधिकारी'
+  };
+
+  for (const key of Object.keys(fieldLabels)) {
+    if (key === 'Department_Verification') continue; // यह Department_Name के नीचे दिखेगा
+    if (!(key in data)) continue;
+
+    const field = document.createElement('div');
+    field.className = 'field';
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'field-label';
+    labelEl.textContent = fieldLabels[key];
+    field.appendChild(labelEl);
+
+    const valueEl = document.createElement('div');
+    valueEl.className = 'field-value';
+
+    const value = data[key];
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        valueEl.textContent = '—';
+      } else {
+        value.forEach(v => {
+          const badge = document.createElement('span');
+          badge.className = 'badge';
+          badge.textContent = v;
+          valueEl.appendChild(badge);
+        });
+      }
+    } else {
+      valueEl.textContent = value || '—';
+    }
+    field.appendChild(valueEl);
+
+    // Department_Name के साथ verification note भी दिखाओ
+    if (key === 'Department_Name' && data.Department_Verification) {
+      const note = document.createElement('div');
+      note.className = 'verification-note';
+      note.textContent = data.Department_Verification;
+      field.appendChild(note);
+    }
+
+    resultGrid.appendChild(field);
+  }
+
+  resultCard.style.display = 'block';
+}
+</script>
+</body>
+</html>
